@@ -12,29 +12,20 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <link rel="apple-touch-icon" href="icon.png">
 
-    <!-- 庫 -->
+    <!-- 1. 優先載入圖示庫 (換成 unpkg 最新版) -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <!-- 2. 再載入 React -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/lucide@0.263.1/dist/umd/lucide.min.js"></script>
 
     <style>
-        /* KAISA 黃色變數 */
-        :root {
-            --bg-kaisa: #FEF9E7;
-            --line-color: #E8E0C5;
-        }
-        body { 
-            background-color: var(--bg-kaisa);
-            -webkit-tap-highlight-color: transparent; 
-            overscroll-behavior-y: none; /* 防止 iOS 橡皮筋效果 */
-        }
-        /* 隱藏捲軸 */
+        :root { --bg-kaisa: #FEF9E7; --line-color: #E8E0C5; }
+        body { background-color: var(--bg-kaisa); -webkit-tap-highlight-color: transparent; overscroll-behavior-y: none; }
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-        
-        /* 錯誤訊息 */
         #error-msg { display: none; color: red; padding: 20px; font-weight: bold; }
     </style>
 </head>
@@ -52,7 +43,6 @@
 
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
-        const { createIcons, ClipboardList, Check, Plus, Archive, Save, ArrowLeft, Trash2 } = lucide;
 
         function App() {
             // --- 狀態 ---
@@ -64,6 +54,14 @@
             const [todos, setTodos] = useState([]);
             const [view, setView] = useState("current"); 
             const [archives, setArchives] = useState([]);
+
+            // --- 圖示重新渲染的黑魔法 ---
+            // 只要 DOM 有變動，就叫 Lucide 去掃描一次頁面上的 <i data-lucide="...">
+            useEffect(() => {
+                if (window.lucide) {
+                    window.lucide.createIcons();
+                }
+            });
 
             // --- 初始化與儲存 ---
             useEffect(() => {
@@ -81,7 +79,6 @@
 
             useEffect(() => {
                 localStorage.setItem('daily_todo_current', JSON.stringify({ title, todos }));
-                createIcons(); // 每次更新都刷新圖示
             }, [title, todos, view]);
 
             useEffect(() => {
@@ -113,8 +110,6 @@
                     items: todos
                 };
                 setArchives([record, ...archives]);
-                
-                // 重置當天
                 const d = new Date();
                 setTitle(`${d.getFullYear()}/${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getDate().toString().padStart(2,'0')}`);
                 setTodos([]);
@@ -166,7 +161,6 @@
             // view === 'current'
             return (
                 <div className="flex flex-col h-full bg-[#FEF9E7] relative">
-                    {/* 標題 */}
                     <div className="flex-none p-5 z-10">
                         <input 
                             type="text" 
@@ -176,7 +170,6 @@
                         />
                     </div>
 
-                    {/* 清單區 (中間捲動) */}
                     <div className="flex-1 overflow-y-auto px-4 pb-32 no-scrollbar">
                         {todos.length === 0 && (
                             <div className="text-center text-[#9C9689] mt-20 opacity-50">
@@ -205,7 +198,6 @@
                         ))}
                     </div>
 
-                    {/* 底部輸入區 (固定在最下方，不隨捲動跑) */}
                     <div className="fixed bottom-0 left-0 right-0 bg-[#FEF9E7] border-t border-[#E8E0C5] p-4 pb-8 shadow-[0_-5px_20px_rgba(0,0,0,0.03)] z-50">
                         <div className="max-w-md mx-auto">
                             <form onSubmit={handleAdd} className="flex gap-2 mb-3">
