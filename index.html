@@ -12,7 +12,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <link rel="apple-touch-icon" href="icon.png">
 
-    <!-- 1. 優先載入圖示庫 (換成 unpkg 最新版) -->
+    <!-- 1. 優先載入圖示庫 -->
     <script src="https://unpkg.com/lucide@latest"></script>
 
     <!-- 2. 再載入 React -->
@@ -26,7 +26,7 @@
         body { background-color: var(--bg-kaisa); -webkit-tap-highlight-color: transparent; overscroll-behavior-y: none; }
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-        #error-msg { display: none; color: red; padding: 20px; font-weight: bold; }
+        #error-msg { display: none; color: red; padding: 20px; font-weight: bold; position: fixed; top:0; left:0; z-index:9999; background:white;}
     </style>
 </head>
 <body class="h-[100dvh] w-screen overflow-hidden text-[#4A453C]">
@@ -37,7 +37,8 @@
     <script>
         window.onerror = function(msg) {
             document.getElementById('error-msg').style.display = 'block';
-            document.getElementById('error-msg').innerText = '⚠️ 錯誤: ' + msg;
+            document.getElementById('error-msg').innerText = '⚠️ 發生錯誤 (點擊重整): ' + msg;
+            document.getElementById('error-msg').onclick = function(){ location.reload(); }
         }
     </script>
 
@@ -55,12 +56,9 @@
             const [view, setView] = useState("current"); 
             const [archives, setArchives] = useState([]);
 
-            // --- 圖示重新渲染的黑魔法 ---
-            // 只要 DOM 有變動，就叫 Lucide 去掃描一次頁面上的 <i data-lucide="...">
+            // --- 圖示重新渲染 ---
             useEffect(() => {
-                if (window.lucide) {
-                    window.lucide.createIcons();
-                }
+                if (window.lucide) window.lucide.createIcons();
             });
 
             // --- 初始化與儲存 ---
@@ -68,13 +66,22 @@
                 try {
                     const savedCurrent = localStorage.getItem('daily_todo_current');
                     const savedArchives = localStorage.getItem('daily_todo_archives');
+                    
                     if (savedCurrent) {
                         const parsed = JSON.parse(savedCurrent);
-                        setTitle(parsed.title);
-                        setTodos(parsed.todos || []);
+                        setTitle(parsed.title || "");
+                        setTodos(Array.isArray(parsed.todos) ? parsed.todos : []);
                     }
-                    if (savedArchives) setArchives(JSON.parse(savedArchives));
-                } catch(e) {}
+                    
+                    if (savedArchives) {
+                        const parsedArchives = JSON.parse(savedArchives);
+                        // 強制確保讀出來的一定是陣列，否則給空陣列
+                        setArchives(Array.isArray(parsedArchives) ? parsedArchives : []);
+                    }
+                } catch(e) {
+                    console.error("讀取失敗重置", e);
+                    setArchives([]); // 讀取失敗就重置為空，避免炸裂
+                }
             }, []);
 
             useEffect(() => {
@@ -109,7 +116,10 @@
                     originalTitle: title,
                     items: todos
                 };
-                setArchives([record, ...archives]);
+                // 確保 archives 是陣列再展開，否則用 []
+                const safeArchives = Array.isArray(archives) ? archives : [];
+                setArchives([record, ...safeArchives]);
+                
                 const d = new Date();
                 setTitle(`${d.getFullYear()}/${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getDate().toString().padStart(2,'0')}`);
                 setTodos([]);
@@ -118,10 +128,15 @@
             };
 
             const deleteArchive = (id) => {
-                if(confirm("確定刪除此紀錄？")) setArchives(archives.filter(a => a.id !== id));
+                if(confirm("確定刪除此紀錄？")) {
+                    const safeArchives = Array.isArray(archives) ? archives : [];
+                    setArchives(safeArchives.filter(a => a.id !== id));
+                }
             };
 
-            // --- 畫面渲染 ---
+            // --- 安全的列表渲染 ---
+            // 確保要渲染的變數絕對是陣列
+            const safeArchivesList = Array.isArray(archives) ? archives : [];
 
             if (view === 'archive') {
                 return (
@@ -133,18 +148,25 @@
                             <h1 className="text-xl font-bold">歷史歸檔</h1>
                         </div>
                         <div className="flex-1 overflow-y-auto p-4 space-y-4 no-scrollbar pb-24">
-                            {archives.length === 0 && <div className="text-center text-[#9C9689] mt-20">暫無紀錄</div>}
-                            {archives.map(record => (
+                            {/* 防呆：如果長度為0顯示暫無紀錄 */}
+                            {safeArchivesList.length === 0 && (
+                                <div className="text-center text-[#9C9689] mt-20">暫無歷史紀錄</div>
+                            )}
+                            
+                            {/* 防呆：確保 map 不會炸 */}
+                            {safeArchivesList.map(record => (
                                 <div key={record.id} className="bg-white rounded-xl p-5 shadow-sm border border-[#E8E0C5]">
                                     <div className="flex justify-between items-start mb-3 border-b border-[#F0EBE0] pb-2">
                                         <div>
                                             <h3 className="font-bold text-lg">{record.originalTitle}</h3>
                                             <span className="text-xs text-[#9C9689]">{record.saveDate}</span>
                                         </div>
-                                        <button onClick={() => deleteArchive(record.id)} className="text-red-400 p-2"><i data-lucide="trash-2" className="w-4 h-4"></i></button>
+                                        <button onClick={() => deleteArchive(record.id)} className="text-red-400 p-2">
+                                            <i data-lucide="trash-2" className="w-4 h-4"></i>
+                                        </button>
                                     </div>
                                     <ul className="space-y-2">
-                                        {record.items.map((item, idx) => (
+                                        {(Array.isArray(record.items) ? record.items : []).map((item, idx) => (
                                             <li key={idx} className="flex items-start text-[15px]">
                                                 <span className={`mr-2 mt-1 text-[10px] ${item.completed ? 'text-[#F59E0B]' : 'text-[#E8E0C5]'}`}>●</span>
                                                 <span className={item.completed ? 'text-[#C4BFB0] line-through' : ''}>{item.text}</span>
