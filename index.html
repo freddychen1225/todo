@@ -12,10 +12,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <link rel="apple-touch-icon" href="icon.png">
 
-    <!-- 1. 優先載入圖示庫 -->
-    <script src="https://unpkg.com/lucide@latest"></script>
-
-    <!-- 2. 再載入 React -->
+    <!-- 只載入 React 與 Tailwind，不載入 Lucide -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -26,7 +23,8 @@
         body { background-color: var(--bg-kaisa); -webkit-tap-highlight-color: transparent; overscroll-behavior-y: none; }
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-        #error-msg { display: none; color: red; padding: 20px; font-weight: bold; position: fixed; top:0; left:0; z-index:9999; background:white;}
+        /* 錯誤訊息 */
+        #error-msg { display: none; color: red; padding: 20px; font-weight: bold; position: fixed; top:0; left:0; z-index:9999; background:white; width:100%; border-bottom: 2px solid red; }
     </style>
 </head>
 <body class="h-[100dvh] w-screen overflow-hidden text-[#4A453C]">
@@ -35,18 +33,26 @@
     <div id="root" class="h-full w-full flex flex-col"></div>
 
     <script>
-        window.onerror = function(msg) {
-            document.getElementById('error-msg').style.display = 'block';
-            document.getElementById('error-msg').innerText = '⚠️ 發生錯誤 (點擊重整): ' + msg;
-            document.getElementById('error-msg').onclick = function(){ location.reload(); }
+        window.onerror = function(msg, url, line) {
+            var display = document.getElementById('error-msg');
+            display.style.display = 'block';
+            display.innerText = '⚠️ 錯誤: ' + msg + ' (行: ' + line + ')';
         }
     </script>
 
     <script type="text/babel">
-        const { useState, useEffect, useRef } = React;
+        const { useState, useEffect } = React;
+
+        // --- 直接內嵌 SVG 圖示組件，永不報錯 ---
+        const IconCheck = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3 text-white"><polyline points="20 6 9 17 4 12"></polyline></svg>;
+        const IconPlus = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>;
+        const IconArchive = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><polyline points="21 8 21 21 3 21 3 8"></polyline><rect x="1" y="3" width="22" height="5"></rect><line x1="10" y1="12" x2="14" y2="12"></line></svg>;
+        const IconSave = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>;
+        const IconArrowLeft = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6 text-[#5C5548]"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>;
+        const IconTrash = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>;
+        const IconClipboard = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" className="w-12 h-12 mx-auto mb-2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect><path d="M9 14l2 2 4-4"></path></svg>;
 
         function App() {
-            // --- 狀態 ---
             const [title, setTitle] = useState(() => {
                 const d = new Date();
                 return `${d.getFullYear()}/${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getDate().toString().padStart(2,'0')}`;
@@ -56,34 +62,26 @@
             const [view, setView] = useState("current"); 
             const [archives, setArchives] = useState([]);
 
-            // --- 圖示重新渲染 ---
-            useEffect(() => {
-                if (window.lucide) window.lucide.createIcons();
-            });
-
-            // --- 初始化與儲存 ---
+            // 初始化：防呆讀取
             useEffect(() => {
                 try {
                     const savedCurrent = localStorage.getItem('daily_todo_current');
                     const savedArchives = localStorage.getItem('daily_todo_archives');
-                    
                     if (savedCurrent) {
                         const parsed = JSON.parse(savedCurrent);
                         setTitle(parsed.title || "");
                         setTodos(Array.isArray(parsed.todos) ? parsed.todos : []);
                     }
-                    
                     if (savedArchives) {
                         const parsedArchives = JSON.parse(savedArchives);
-                        // 強制確保讀出來的一定是陣列，否則給空陣列
                         setArchives(Array.isArray(parsedArchives) ? parsedArchives : []);
                     }
                 } catch(e) {
-                    console.error("讀取失敗重置", e);
-                    setArchives([]); // 讀取失敗就重置為空，避免炸裂
+                    setArchives([]);
                 }
             }, []);
 
+            // 自動儲存
             useEffect(() => {
                 localStorage.setItem('daily_todo_current', JSON.stringify({ title, todos }));
             }, [title, todos, view]);
@@ -92,15 +90,11 @@
                 localStorage.setItem('daily_todo_archives', JSON.stringify(archives));
             }, [archives]);
 
-            // --- 邏輯 ---
+            // 邏輯函式
             const handleAdd = (e) => {
                 e.preventDefault();
                 if (!inputText.trim()) return;
-                setTodos([...todos, { 
-                    id: Date.now().toString(36) + Math.random().toString(36).substr(2), 
-                    text: inputText.trim(), 
-                    completed: false 
-                }]);
+                setTodos([...todos, { id: Date.now().toString(), text: inputText.trim(), completed: false }]);
                 setInputText("");
             };
 
@@ -116,7 +110,6 @@
                     originalTitle: title,
                     items: todos
                 };
-                // 確保 archives 是陣列再展開，否則用 []
                 const safeArchives = Array.isArray(archives) ? archives : [];
                 setArchives([record, ...safeArchives]);
                 
@@ -129,31 +122,28 @@
 
             const deleteArchive = (id) => {
                 if(confirm("確定刪除此紀錄？")) {
-                    const safeArchives = Array.isArray(archives) ? archives : [];
-                    setArchives(safeArchives.filter(a => a.id !== id));
+                    setArchives(Array.isArray(archives) ? archives.filter(a => a.id !== id) : []);
                 }
             };
 
-            // --- 安全的列表渲染 ---
-            // 確保要渲染的變數絕對是陣列
+            // 安全列表
             const safeArchivesList = Array.isArray(archives) ? archives : [];
 
+            // --- 歸檔視圖 ---
             if (view === 'archive') {
                 return (
                     <div className="flex flex-col h-full bg-[#F5F1E0]">
                         <div className="flex-none p-4 bg-[#FEF9E7] shadow-sm flex items-center z-20">
                             <button onClick={() => setView('current')} className="mr-3 p-3 -ml-2 rounded-full hover:bg-[#EAE4D0]">
-                                <i data-lucide="arrow-left" className="w-6 h-6 text-[#5C5548]"></i>
+                                <IconArrowLeft />
                             </button>
                             <h1 className="text-xl font-bold">歷史歸檔</h1>
                         </div>
                         <div className="flex-1 overflow-y-auto p-4 space-y-4 no-scrollbar pb-24">
-                            {/* 防呆：如果長度為0顯示暫無紀錄 */}
                             {safeArchivesList.length === 0 && (
                                 <div className="text-center text-[#9C9689] mt-20">暫無歷史紀錄</div>
                             )}
                             
-                            {/* 防呆：確保 map 不會炸 */}
                             {safeArchivesList.map(record => (
                                 <div key={record.id} className="bg-white rounded-xl p-5 shadow-sm border border-[#E8E0C5]">
                                     <div className="flex justify-between items-start mb-3 border-b border-[#F0EBE0] pb-2">
@@ -162,7 +152,7 @@
                                             <span className="text-xs text-[#9C9689]">{record.saveDate}</span>
                                         </div>
                                         <button onClick={() => deleteArchive(record.id)} className="text-red-400 p-2">
-                                            <i data-lucide="trash-2" className="w-4 h-4"></i>
+                                            <IconTrash />
                                         </button>
                                     </div>
                                     <ul className="space-y-2">
@@ -180,7 +170,7 @@
                 );
             }
 
-            // view === 'current'
+            // --- 當前視圖 ---
             return (
                 <div className="flex flex-col h-full bg-[#FEF9E7] relative">
                     <div className="flex-none p-5 z-10">
@@ -195,7 +185,7 @@
                     <div className="flex-1 overflow-y-auto px-4 pb-32 no-scrollbar">
                         {todos.length === 0 && (
                             <div className="text-center text-[#9C9689] mt-20 opacity-50">
-                                <i data-lucide="clipboard-list" className="w-12 h-12 mx-auto mb-2"></i>
+                                <IconClipboard />
                                 <p>新增你的第一件事</p>
                             </div>
                         )}
@@ -210,7 +200,7 @@
                                     <span className="text-[10px] font-mono text-[#C4BFB0] mb-1">{index + 1}</span>
                                     <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center
                                         ${todo.completed ? 'bg-[#F59E0B] border-[#F59E0B]' : 'border-[#D6CDB8]'}`}>
-                                        {todo.completed && <i data-lucide="check" className="w-3 h-3 text-white"></i>}
+                                        {todo.completed && <IconCheck />}
                                     </div>
                                 </div>
                                 <div className={`text-lg leading-snug flex-1 break-all ${todo.completed ? 'line-through text-[#C4BFB0]' : 'text-[#5C5548]'}`}>
@@ -231,16 +221,16 @@
                                     className="flex-1 bg-white text-[#4A453C] rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-[#F59E0B]/50 text-lg shadow-sm border border-[#E8E0C5]"
                                 />
                                 <button type="submit" className="bg-[#F59E0B] text-white w-12 h-12 rounded-xl flex items-center justify-center shadow-lg active:scale-90 transition-transform flex-shrink-0">
-                                    <i data-lucide="plus" className="w-6 h-6"></i>
+                                    <IconPlus />
                                 </button>
                             </form>
                             
                             <div className="flex justify-between px-1">
                                 <button onClick={() => setView('archive')} className="text-[#9C9689] text-sm flex items-center gap-1 py-2 px-3 rounded-lg hover:bg-[#F2EFE6]">
-                                    <i data-lucide="archive" className="w-4 h-4"></i> 紀錄
+                                    <IconArchive /> 紀錄
                                 </button>
                                 <button onClick={handleArchive} className="text-[#B58900] font-bold text-sm flex items-center gap-1 py-2 px-3 rounded-lg bg-[#FFF2CC]">
-                                    <i data-lucide="save" className="w-4 h-4"></i> 歸檔
+                                    <IconSave /> 歸檔
                                 </button>
                             </div>
                         </div>
