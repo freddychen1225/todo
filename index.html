@@ -59,9 +59,10 @@
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
 
-        // --- 雲端設定 (已填入您的 Key) ---
+        // --- 雲端設定 (改用 Master Key) ---
         const BIN_ID = "6940c08643b1c97be9f11726";
-        const API_KEY = "$2a$10$nl3XaCv5NrMSSNrTu3jyfuwaUamRZYiGnwVQw26u.Qvj9JO2B45Pi"; // 使用 Access Key
+        // 使用您的 X-Master-Key，權限最高，保證能讀寫
+        const API_KEY = "$2a$10$KswvGv7VOFlGbWvZCr8W9uZKsQ3rJWGsV3JWj8czKDfCm1E9/c91y"; 
         const API_URL = `https://api.jsonbin.io/v3/b/${BIN_ID}`;
 
         // --- 內嵌 SVG 圖示 ---
@@ -83,20 +84,26 @@
             const [todos, setTodos] = useState([]);
             const [archives, setArchives] = useState([]);
             const [view, setView] = useState("current"); 
-            const [isLoading, setIsLoading] = useState(true); // 載入中狀態
+            const [isLoading, setIsLoading] = useState(true);
 
-            const isFirstLoad = useRef(true); // 防止首次載入時覆寫雲端資料
-            const saveTimeoutRef = useRef(null); // 防抖計時器
+            const isFirstLoad = useRef(true);
+            const saveTimeoutRef = useRef(null);
 
             // --- 雲端同步核心邏輯 ---
             
-            // 1. 從雲端讀取資料 (Read)
+            // 1. 從雲端讀取資料
             const fetchFromCloud = async () => {
                 try {
+                    console.log("開始讀取雲端...");
                     const res = await fetch(API_URL, {
                         headers: { "X-Master-Key": API_KEY }
                     });
-                    if (!res.ok) throw new Error("網路連線錯誤");
+                    
+                    if (!res.ok) {
+                        const errText = await res.text();
+                        console.error("雲端錯誤:", res.status, errText);
+                        throw new Error(`連線錯誤 (${res.status})`);
+                    }
                     
                     const json = await res.json();
                     const data = json.record;
@@ -107,23 +114,22 @@
                     if (Array.isArray(data.archives)) setArchives(data.archives);
                     
                     setIsLoading(false);
-                    isFirstLoad.current = false; // 讀取完畢，可以開始監聽變更並儲存了
+                    isFirstLoad.current = false;
                 } catch (err) {
                     console.error("讀取失敗:", err);
-                    alert("⚠️ 無法連線到雲端，將使用離線模式 (請檢查網路)");
+                    alert("⚠️ 無法連線到雲端，將使用離線模式 (" + err.message + ")");
                     setIsLoading(false);
                     isFirstLoad.current = false;
                 }
             };
 
-            // 2. 儲存到雲端 (Update) - 採用防抖機制 (Debounce)
+            // 2. 儲存到雲端 (Update)
             const saveToCloud = () => {
-                if (isFirstLoad.current) return; // 如果還沒讀取完，絕對不要儲存(會覆蓋成空)
+                if (isFirstLoad.current) return;
 
                 const indicator = document.getElementById("sync-status");
-                indicator.className = "sync-indicator sync-saving"; // 亮黃燈
+                indicator.className = "sync-indicator sync-saving"; // 黃燈
 
-                // 清除舊的計時器 (如果使用者一直打字，就不會一直存，直到停下來 1 秒後才存)
                 if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
 
                 saveTimeoutRef.current = setTimeout(async () => {
@@ -141,38 +147,33 @@
 
                         if (!res.ok) throw new Error("儲存失敗");
                         
-                        indicator.className = "sync-indicator sync-done"; // 亮綠燈
+                        indicator.className = "sync-indicator sync-done"; // 綠燈
                         setTimeout(() => indicator.className = "sync-indicator", 2000); // 燈滅
                     } catch (err) {
                         console.error("儲存失敗:", err);
-                        indicator.className = "sync-indicator sync-error"; // 亮紅燈
+                        indicator.className = "sync-indicator sync-error"; // 紅燈
                     }
-                }, 1000); // 延遲 1 秒儲存
+                }, 1000);
             };
 
             // --- 生命周期 ---
-
-            // 啟動時：讀取雲端資料 + 設定喚醒檢查
             useEffect(() => {
-                fetchFromCloud(); // 第一次下載
+                fetchFromCloud();
 
-                // 喚醒檢測 (APP 從背景回來時，檢查日期並重新同步)
                 const handleVisibilityChange = () => {
                     if (document.visibilityState === 'visible') {
-                        // 1. 檢查日期
                         const d = new Date();
                         const todayStr = `${d.getFullYear()}/${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getDate().toString().padStart(2,'0')}`;
                         setTitle(prev => {
                             if (/^\d{4}\/\d{2}\/\d{2}$/.test(prev) && prev !== todayStr) return todayStr;
                             return prev;
                         });
-
-                        // 2. (選用) 重新抓取雲端，以防在別台裝置改過
-                        // fetchFromCloud(); // 如果想要多裝置即時同步，可以取消這行註解
+                        // 喚醒時也重新同步一次，確保是最新
+                        fetchFromCloud();
                     }
                 };
                 document.addEventListener("visibilitychange", handleVisibilityChange);
-                const timer = setInterval(() => { /* 每天檢查日期的邏輯同上 */ }, 60000);
+                const timer = setInterval(() => { /* 日期檢查 */ }, 60000);
 
                 return () => {
                     document.removeEventListener("visibilitychange", handleVisibilityChange);
@@ -180,13 +181,12 @@
                 };
             }, []);
 
-            // 資料變更時：自動觸發儲存
             useEffect(() => {
                 saveToCloud();
-            }, [title, todos, archives]); // 只要這三個變，就觸發儲存
+            }, [title, todos, archives]);
 
 
-            // --- 邏輯操作 (跟之前一樣) ---
+            // --- 邏輯操作 ---
             const handleAdd = (e) => {
                 e.preventDefault();
                 if (!inputText.trim()) return;
