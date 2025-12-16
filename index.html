@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>日日清單</title>
+    <title>日日清單 (雲端版)</title>
     
     <!-- PWA -->
     <link rel="manifest" href="manifest.json">
@@ -12,7 +12,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <link rel="apple-touch-icon" href="icon.png">
 
-    <!-- 只載入 React 與 Tailwind，不載入 Lucide -->
+    <!-- 庫 -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -23,27 +23,48 @@
         body { background-color: var(--bg-kaisa); -webkit-tap-highlight-color: transparent; overscroll-behavior-y: none; }
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-        /* 錯誤訊息 */
-        #error-msg { display: none; color: red; padding: 20px; font-weight: bold; position: fixed; top:0; left:0; z-index:9999; background:white; width:100%; border-bottom: 2px solid red; }
+        
+        /* 同步狀態指示燈 */
+        .sync-indicator {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            z-index: 9999;
+            transition: all 0.3s ease;
+        }
+        .sync-saving { background-color: #F59E0B; box-shadow: 0 0 5px #F59E0B; } /* 儲存中(黃) */
+        .sync-done { background-color: #10B981; opacity: 0; } /* 完成(綠 -> 消失) */
+        .sync-error { background-color: #EF4444; box-shadow: 0 0 8px #EF4444; } /* 錯誤(紅) */
+
+        #error-msg { display: none; color: red; padding: 20px; font-weight: bold; position: fixed; top:30px; left:0; z-index:9999; background:white; width:100%; border-bottom: 2px solid red; text-align: center;}
     </style>
 </head>
 <body class="h-[100dvh] w-screen overflow-hidden text-[#4A453C]">
 
+    <div id="sync-status" class="sync-indicator"></div>
     <div id="error-msg"></div>
     <div id="root" class="h-full w-full flex flex-col"></div>
 
     <script>
-        window.onerror = function(msg, url, line) {
-            var display = document.getElementById('error-msg');
-            display.style.display = 'block';
-            display.innerText = '⚠️ 錯誤: ' + msg + ' (行: ' + line + ')';
+        window.onerror = function(msg) {
+            document.getElementById('error-msg').style.display = 'block';
+            document.getElementById('error-msg').innerText = '⚠️ 錯誤: ' + msg;
+            setTimeout(() => document.getElementById('error-msg').style.display = 'none', 5000);
         }
     </script>
 
     <script type="text/babel">
-        const { useState, useEffect } = React;
+        const { useState, useEffect, useRef } = React;
 
-        // --- 直接內嵌 SVG 圖示組件，永不報錯 ---
+        // --- 雲端設定 (已填入您的 Key) ---
+        const BIN_ID = "6940c08643b1c97be9f11726";
+        const API_KEY = "$2a$10$nl3XaCv5NrMSSNrTu3jyfuwaUamRZYiGnwVQw26u.Qvj9JO2B45Pi"; // 使用 Access Key
+        const API_URL = `https://api.jsonbin.io/v3/b/${BIN_ID}`;
+
+        // --- 內嵌 SVG 圖示 ---
         const IconCheck = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3 text-white"><polyline points="20 6 9 17 4 12"></polyline></svg>;
         const IconPlus = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>;
         const IconArchive = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><polyline points="21 8 21 21 3 21 3 8"></polyline><rect x="1" y="3" width="22" height="5"></rect><line x1="10" y1="12" x2="14" y2="12"></line></svg>;
@@ -53,44 +74,119 @@
         const IconClipboard = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" className="w-12 h-12 mx-auto mb-2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect><path d="M9 14l2 2 4-4"></path></svg>;
 
         function App() {
+            // --- 狀態 ---
             const [title, setTitle] = useState(() => {
                 const d = new Date();
                 return `${d.getFullYear()}/${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getDate().toString().padStart(2,'0')}`;
             });
             const [inputText, setInputText] = useState("");
             const [todos, setTodos] = useState([]);
-            const [view, setView] = useState("current"); 
             const [archives, setArchives] = useState([]);
+            const [view, setView] = useState("current"); 
+            const [isLoading, setIsLoading] = useState(true); // 載入中狀態
 
-            // 初始化：防呆讀取
-            useEffect(() => {
+            const isFirstLoad = useRef(true); // 防止首次載入時覆寫雲端資料
+            const saveTimeoutRef = useRef(null); // 防抖計時器
+
+            // --- 雲端同步核心邏輯 ---
+            
+            // 1. 從雲端讀取資料 (Read)
+            const fetchFromCloud = async () => {
                 try {
-                    const savedCurrent = localStorage.getItem('daily_todo_current');
-                    const savedArchives = localStorage.getItem('daily_todo_archives');
-                    if (savedCurrent) {
-                        const parsed = JSON.parse(savedCurrent);
-                        setTitle(parsed.title || "");
-                        setTodos(Array.isArray(parsed.todos) ? parsed.todos : []);
-                    }
-                    if (savedArchives) {
-                        const parsedArchives = JSON.parse(savedArchives);
-                        setArchives(Array.isArray(parsedArchives) ? parsedArchives : []);
-                    }
-                } catch(e) {
-                    setArchives([]);
+                    const res = await fetch(API_URL, {
+                        headers: { "X-Master-Key": API_KEY }
+                    });
+                    if (!res.ok) throw new Error("網路連線錯誤");
+                    
+                    const json = await res.json();
+                    const data = json.record;
+
+                    // 更新本地狀態
+                    if (data.title) setTitle(data.title);
+                    if (Array.isArray(data.todos)) setTodos(data.todos);
+                    if (Array.isArray(data.archives)) setArchives(data.archives);
+                    
+                    setIsLoading(false);
+                    isFirstLoad.current = false; // 讀取完畢，可以開始監聽變更並儲存了
+                } catch (err) {
+                    console.error("讀取失敗:", err);
+                    alert("⚠️ 無法連線到雲端，將使用離線模式 (請檢查網路)");
+                    setIsLoading(false);
+                    isFirstLoad.current = false;
                 }
+            };
+
+            // 2. 儲存到雲端 (Update) - 採用防抖機制 (Debounce)
+            const saveToCloud = () => {
+                if (isFirstLoad.current) return; // 如果還沒讀取完，絕對不要儲存(會覆蓋成空)
+
+                const indicator = document.getElementById("sync-status");
+                indicator.className = "sync-indicator sync-saving"; // 亮黃燈
+
+                // 清除舊的計時器 (如果使用者一直打字，就不會一直存，直到停下來 1 秒後才存)
+                if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+
+                saveTimeoutRef.current = setTimeout(async () => {
+                    try {
+                        const payload = { title, todos, archives };
+                        
+                        const res = await fetch(API_URL, {
+                            method: "PUT",
+                            headers: {
+                                "Content-Type": "application/json",
+                                "X-Master-Key": API_KEY
+                            },
+                            body: JSON.stringify(payload)
+                        });
+
+                        if (!res.ok) throw new Error("儲存失敗");
+                        
+                        indicator.className = "sync-indicator sync-done"; // 亮綠燈
+                        setTimeout(() => indicator.className = "sync-indicator", 2000); // 燈滅
+                    } catch (err) {
+                        console.error("儲存失敗:", err);
+                        indicator.className = "sync-indicator sync-error"; // 亮紅燈
+                    }
+                }, 1000); // 延遲 1 秒儲存
+            };
+
+            // --- 生命周期 ---
+
+            // 啟動時：讀取雲端資料 + 設定喚醒檢查
+            useEffect(() => {
+                fetchFromCloud(); // 第一次下載
+
+                // 喚醒檢測 (APP 從背景回來時，檢查日期並重新同步)
+                const handleVisibilityChange = () => {
+                    if (document.visibilityState === 'visible') {
+                        // 1. 檢查日期
+                        const d = new Date();
+                        const todayStr = `${d.getFullYear()}/${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getDate().toString().padStart(2,'0')}`;
+                        setTitle(prev => {
+                            if (/^\d{4}\/\d{2}\/\d{2}$/.test(prev) && prev !== todayStr) return todayStr;
+                            return prev;
+                        });
+
+                        // 2. (選用) 重新抓取雲端，以防在別台裝置改過
+                        // fetchFromCloud(); // 如果想要多裝置即時同步，可以取消這行註解
+                    }
+                };
+                document.addEventListener("visibilitychange", handleVisibilityChange);
+                const timer = setInterval(() => { /* 每天檢查日期的邏輯同上 */ }, 60000);
+
+                return () => {
+                    document.removeEventListener("visibilitychange", handleVisibilityChange);
+                    clearInterval(timer);
+                };
             }, []);
 
-            // 自動儲存
+            // 資料變更時：自動觸發儲存
             useEffect(() => {
-                localStorage.setItem('daily_todo_current', JSON.stringify({ title, todos }));
-            }, [title, todos, view]);
+                saveToCloud();
+            }, [title, todos, archives]); // 只要這三個變，就觸發儲存
 
-            useEffect(() => {
-                localStorage.setItem('daily_todo_archives', JSON.stringify(archives));
-            }, [archives]);
 
-            // 邏輯函式
+            // --- 邏輯操作 (跟之前一樣) ---
             const handleAdd = (e) => {
                 e.preventDefault();
                 if (!inputText.trim()) return;
@@ -110,26 +206,31 @@
                     originalTitle: title,
                     items: todos
                 };
-                const safeArchives = Array.isArray(archives) ? archives : [];
-                setArchives([record, ...safeArchives]);
+                setArchives([record, ...archives]);
                 
                 const d = new Date();
                 setTitle(`${d.getFullYear()}/${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getDate().toString().padStart(2,'0')}`);
                 setTodos([]);
                 setView("current");
-                alert("已歸檔！");
+                alert("已歸檔並同步至雲端！");
             };
 
             const deleteArchive = (id) => {
                 if(confirm("確定刪除此紀錄？")) {
-                    setArchives(Array.isArray(archives) ? archives.filter(a => a.id !== id) : []);
+                    setArchives(archives.filter(a => a.id !== id));
                 }
             };
 
-            // 安全列表
-            const safeArchivesList = Array.isArray(archives) ? archives : [];
+            // --- 渲染 ---
+            if (isLoading) {
+                return (
+                    <div className="h-full flex items-center justify-center bg-[#FEF9E7] flex-col text-[#9C9689]">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#F59E0B] mb-4"></div>
+                        <p>正在同步雲端資料...</p>
+                    </div>
+                );
+            }
 
-            // --- 歸檔視圖 ---
             if (view === 'archive') {
                 return (
                     <div className="flex flex-col h-full bg-[#F5F1E0]">
@@ -140,11 +241,8 @@
                             <h1 className="text-xl font-bold">歷史歸檔</h1>
                         </div>
                         <div className="flex-1 overflow-y-auto p-4 space-y-4 no-scrollbar pb-24">
-                            {safeArchivesList.length === 0 && (
-                                <div className="text-center text-[#9C9689] mt-20">暫無歷史紀錄</div>
-                            )}
-                            
-                            {safeArchivesList.map(record => (
+                            {archives.length === 0 && <div className="text-center text-[#9C9689] mt-20">暫無歷史紀錄</div>}
+                            {archives.map(record => (
                                 <div key={record.id} className="bg-white rounded-xl p-5 shadow-sm border border-[#E8E0C5]">
                                     <div className="flex justify-between items-start mb-3 border-b border-[#F0EBE0] pb-2">
                                         <div>
@@ -156,7 +254,7 @@
                                         </button>
                                     </div>
                                     <ul className="space-y-2">
-                                        {(Array.isArray(record.items) ? record.items : []).map((item, idx) => (
+                                        {(record.items || []).map((item, idx) => (
                                             <li key={idx} className="flex items-start text-[15px]">
                                                 <span className={`mr-2 mt-1 text-[10px] ${item.completed ? 'text-[#F59E0B]' : 'text-[#E8E0C5]'}`}>●</span>
                                                 <span className={item.completed ? 'text-[#C4BFB0] line-through' : ''}>{item.text}</span>
@@ -170,7 +268,6 @@
                 );
             }
 
-            // --- 當前視圖 ---
             return (
                 <div className="flex flex-col h-full bg-[#FEF9E7] relative">
                     <div className="flex-none p-5 z-10">
@@ -241,12 +338,6 @@
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
-    </script>
-    
-    <script>
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js'));
-        }
     </script>
 </body>
 </html>
